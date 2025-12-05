@@ -238,7 +238,7 @@ int main() {
                 std::cout << "\n";
 
                 int q = askQuality();
-                scheduler.review(*item, static_cast<ReviewQuality>(q));
+                scheduler.review(*item, static_cast<ReviewQuality>(q - 1));
 
                 if (q == 1) item->streak = 0;
                 else { item->review_count++; item->streak++; }

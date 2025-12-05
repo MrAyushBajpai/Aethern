@@ -1,56 +1,40 @@
 #pragma once
-#include <vector>
 #include <unordered_map>
+#include <string>
+#include <vector>
 #include <ctime>
 #include <algorithm>
-#include <spdlog/spdlog.h>
-#include "Item.hpp"
+#include <cmath>
 #include "TagManager.hpp"
+#include "Item.hpp"
 
 enum class ReviewQuality {
-    AGAIN = 1,
-    HARD = 2,
-    GOOD = 3,
-    EASY = 4
+    AGAIN = 0,
+    HARD = 1,
+    GOOD = 2,
+    EASY = 3
 };
 
 class Scheduler {
 public:
-    explicit Scheduler(TagManager* tagMgr);
+    explicit Scheduler(TagManager* tags = nullptr)
+        : tagManager(tags) {
+    }
 
-    void review(Item& item, ReviewQuality quality);
+    void review(Item& item, ReviewQuality q);
     std::vector<Item*> getDueItems(std::vector<Item>& items) const;
 
 private:
-    TagManager* tagManager;
-
-    struct Meta {
+    struct SM2Data {
         int reps = 0;
-        double stability = 1.0;
-        double difficulty = 0.3;
-        std::time_t last_review = 0;
+        double ef = 2.5;
+        int last_interval = 1;
     };
 
-    mutable std::unordered_map<const Item*, Meta> meta_by_item;
+    TagManager* tagManager;
+    std::unordered_map<std::string, SM2Data> cards;
 
-    int computeNewIntervalFSRS(const Item& item, Meta& m, ReviewQuality q) const;
-    int computeNewIntervalSM2(const Item& item, ReviewQuality q) const;
-    double updateStability(Meta& m, ReviewQuality q, int interval) const;
-    void updateDifficulty(Meta& m, ReviewQuality q) const;
-
-    int applyTagPriority(const Item& item, int interval) const;
+    // Tag helpers
     double combinedTagWeight(const Item& item) const;
-
-    void handleLapse(Item& item, Meta& m);
-
-    double ease_min;
-    double ease_max;
-    int lapse_reset_interval_days;
-    int leech_threshold;
-
-    double fsrs_q_target_good;
-    double fsrs_q_target_hard;
-    double fsrs_q_target_easy;
-    double fsrs_max_stability;
-    double fsrs_min_stability;
+    int applyTagPriority(const Item& item, int interval) const;
 };

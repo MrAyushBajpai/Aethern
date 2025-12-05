@@ -20,6 +20,7 @@ add_library(core
 )
 
 target_include_directories(core PUBLIC src)
+target_link_libraries(core PRIVATE spdlog::spdlog)
 
 #
 # === AUTH LIBRARY ===

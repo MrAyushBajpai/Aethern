@@ -9,7 +9,6 @@
 #include "../core/Scheduler.hpp"
 
 std::string itemFileFor(const std::string& username) {
-    // uses a .dat extension and avoids '.txt'
     return "data_" + username + ".dat";
 }
 
@@ -26,8 +25,32 @@ void listAllItems(const std::vector<Item>& items) {
         std::cout << i + 1 << ". " << it.title << "\n";
         std::cout << "   Interval: " << it.interval << " days\n";
         std::cout << "   Ease: " << it.ease_factor << "\n";
-        std::cout << "   Next review (UNIX): " << it.next_review << "\n";
+        std::cout << "   Lapses: " << it.lapses << "\n";
+        std::cout << "   Streak: " << it.streak << "\n";
+        std::cout << "   Next review: " << it.next_review << " (UNIX)\n";
+        std::cout << "   Leech: " << (it.is_leech ? "YES" : "NO") << "\n";
         std::cout << "-----------------------------\n";
+    }
+}
+
+int askQuality() {
+    while (true) {
+        std::cout << "\nChoose difficulty:\n";
+        std::cout << " 1 = AGAIN (Failed)\n";
+        std::cout << " 2 = HARD\n";
+        std::cout << " 3 = GOOD\n";
+        std::cout << " 4 = EASY\n";
+        std::cout << "> ";
+
+        int q;
+        if (std::cin >> q && q >= 1 && q <= 4) {
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            return q;
+        }
+
+        std::cin.clear();
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        std::cout << "Invalid input. Please choose 1–4.\n";
     }
 }
 
@@ -39,13 +62,13 @@ int main() {
 
     Log::init();
 
-    AuthManager auth; // automatically loads users from users.txt
+    AuthManager auth;
     Scheduler scheduler;
     std::vector<Item> items;
     User* current = nullptr;
 
-    // LOGIN / SIGNUP
-    while (current == nullptr) {
+    // LOGIN LOOP
+    while (!current) {
         std::cout << "\n===== LOGIN MENU =====\n";
         std::cout << "1. Login\n";
         std::cout << "2. Signup\n";
@@ -54,8 +77,7 @@ int main() {
         int choice;
         if (!(std::cin >> choice)) {
             std::cin.clear();
-            std::string dummy;
-            std::getline(std::cin, dummy);
+            std::cin.ignore(1024, '\n');
             continue;
         }
         std::cin.ignore();
@@ -69,13 +91,13 @@ int main() {
 
             if (auth.login(username, password)) {
                 current = auth.getCurrentUser();
-                // load user items with session key
                 const auto& key = auth.getSessionKey();
+
                 if (!Storage::loadItems(items, itemFileFor(current->username), key)) {
-                    std::cout << "Warning: could not load or decrypt your data file. It may not exist or the password/key is wrong.\n";
+                    std::cout << "Warning: Could not decrypt item file.\n";
                 }
                 else {
-                    std::cout << "Loaded your items.\n";
+                    std::cout << "Items loaded.\n";
                 }
             }
             else {
@@ -89,16 +111,11 @@ int main() {
             std::cout << "Choose password: ";
             std::getline(std::cin, password);
 
-            if (username.empty() || password.empty()) {
-                std::cout << "Error: username/password cannot be empty.\n";
-                continue;
-            }
-
             if (auth.signup(username, password)) {
-                std::cout << "Signup successful. You can now login.\n";
+                std::cout << "Signup successful. Please login.\n";
             }
             else {
-                std::cout << "Username already exists or signup failed.\n";
+                std::cout << "Signup failed (username may exist).\n";
             }
         }
         else if (choice == 3) {
@@ -106,7 +123,7 @@ int main() {
         }
     }
 
-    // MAIN APP LOOP
+    // MAIN LOOP
     while (true) {
         std::cout << "\n===== MAIN MENU =====\n";
         std::cout << "User: " << current->username << "\n";
@@ -118,75 +135,82 @@ int main() {
         int choice;
         if (!(std::cin >> choice)) {
             std::cin.clear();
-            std::string dummy;
-            std::getline(std::cin, dummy);
+            std::cin.ignore(1024, '\n');
             continue;
         }
         std::cin.ignore();
 
         if (choice == 1) {
-            std::string title;
-            std::cout << "Enter item title: ";
+            std::string title, content;
+
+            std::cout << "Enter title: ";
             std::getline(std::cin, title);
+
+            std::cout << "Enter content (optional): ";
+            std::getline(std::cin, content);
 
             if (title.empty()) {
                 std::cout << "Title cannot be empty.\n";
                 continue;
             }
 
-            items.emplace_back(title);
-            std::cout << "Item added.\n";
+            items.emplace_back(title, content);
+            std::cout << "Item created.\n";
         }
+
+        // REVIEW
         else if (choice == 2) {
             auto due = scheduler.getDueItems(items);
 
             if (due.empty()) {
-                std::cout << "No items due for review.\n";
+                std::cout << "No items due.\n";
                 continue;
             }
 
             for (auto* item : due) {
-                std::cout << "\nReviewing: " << item->title << "\n";
-                std::cout << "Quality (1=Again, 2=Hard, 3=Good, 4=Easy): ";
+                std::cout << "\n===== REVIEW ITEM =====\n";
+                std::cout << "Title:   " << item->title << "\n";
+                std::cout << "Content: " << item->content << "\n\n";
+                std::cout << "Interval: " << item->interval << " days\n";
+                std::cout << "Ease:     " << item->ease_factor << "\n";
+                std::cout << "Lapses:   " << item->lapses << "\n";
+                std::cout << "Streak:   " << item->streak << "\n";
+                std::cout << "Next Review (UNIX): " << item->next_review << "\n";
 
-                int q;
-                if (!(std::cin >> q)) {
-                    std::cin.clear();
-                    std::string dummy;
-                    std::getline(std::cin, dummy);
-                    std::cout << "Invalid input.\n";
-                    continue;
-                }
-                std::cin.ignore();
-
-                if (q < 1 || q > 4) {
-                    std::cout << "Invalid response—skipping.\n";
-                    continue;
-                }
-
+                int q = askQuality();
                 scheduler.review(*item, static_cast<ReviewQuality>(q));
-                std::cout << "Updated.\n";
+
+                // Update item stats (high-level)
+                if (q == 1) {
+                    item->streak = 0;
+                }
+                else {
+                    item->review_count++;
+                    item->streak++;
+                }
+
+                std::cout << "Item updated.\n";
             }
         }
+
         else if (choice == 3) {
             listAllItems(items);
         }
+
         else if (choice == 4) {
             const auto& key = auth.getSessionKey();
+
             if (!Storage::saveItems(items, itemFileFor(current->username), key)) {
-                std::cout << "Error: could not save encrypted data.\n";
+                std::cout << "Failed to save encrypted data.\n";
             }
             else {
                 std::cout << "Items saved.\n";
             }
-            // save users too (not strictly necessary unless signup happened)
+
             auth.save();
             auth.logout();
             std::cout << "Goodbye!\n";
             break;
-        }
-        else {
-            std::cout << "Invalid option.\n";
         }
     }
 

@@ -9,8 +9,7 @@ public:
 
     int getWeight(const std::string& tag) const {
         auto it = weights.find(tag);
-        if (it == weights.end()) return 1; // default neutral
-        return it->second;
+        return it == weights.end() ? 1 : it->second;
     }
 
     void setWeight(const std::string& tag, int weight) {

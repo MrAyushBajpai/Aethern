@@ -7,9 +7,9 @@
 #include "../storage/Storage.hpp"
 #include "../core/Scheduler.hpp"
 
-// Generate safe per-user data file
 std::string itemFileFor(const std::string& username) {
-    return "items_" + username + ".txt";
+    // uses a .dat extension and avoids '.txt'
+    return "data_" + username + ".dat";
 }
 
 void listAllItems(const std::vector<Item>& items) {
@@ -22,7 +22,6 @@ void listAllItems(const std::vector<Item>& items) {
 
     for (size_t i = 0; i < items.size(); i++) {
         const Item& it = items[i];
-
         std::cout << i + 1 << ". " << it.title << "\n";
         std::cout << "   Interval: " << it.interval << " days\n";
         std::cout << "   Ease: " << it.ease_factor << "\n";
@@ -32,98 +31,94 @@ void listAllItems(const std::vector<Item>& items) {
 }
 
 int main() {
-    //
-    // ===== Initialize libsodium =====
-    //
     if (sodium_init() < 0) {
-        std::cerr << "Fatal error: could not initialize libsodium.\n";
+        std::cerr << "Failed to initialize libsodium\n";
         return 1;
     }
 
-    //
-    // ===== Setup managers =====
-    //
-    AuthManager auth("users.txt");   // loads users internally
+    AuthManager auth; // automatically loads users from users.txt
     Scheduler scheduler;
-
     std::vector<Item> items;
     User* current = nullptr;
 
-    //
-    // ===== LOGIN / SIGNUP LOOP =====
-    //
-    while (!current) {
-        std::cout << "\n===== AUTH MENU =====\n";
+    // LOGIN / SIGNUP
+    while (current == nullptr) {
+        std::cout << "\n===== LOGIN MENU =====\n";
         std::cout << "1. Login\n";
         std::cout << "2. Signup\n";
         std::cout << "3. Exit\n> ";
 
         int choice;
-        std::cin >> choice;
+        if (!(std::cin >> choice)) {
+            std::cin.clear();
+            std::string dummy;
+            std::getline(std::cin, dummy);
+            continue;
+        }
         std::cin.ignore();
 
         if (choice == 1) {
             std::string username, password;
-
             std::cout << "Username: ";
             std::getline(std::cin, username);
-
             std::cout << "Password: ";
             std::getline(std::cin, password);
 
             if (auth.login(username, password)) {
-                std::cout << "\nLogin successful.\n";
                 current = auth.getCurrentUser();
-
-                // Load per-user items
-                Storage::loadItems(items, itemFileFor(username));
+                // load user items with session key
+                const auto& key = auth.getSessionKey();
+                if (!Storage::loadItems(items, itemFileFor(current->username), key)) {
+                    std::cout << "Warning: could not load or decrypt your data file. It may not exist or the password/key is wrong.\n";
+                }
+                else {
+                    std::cout << "Loaded your items.\n";
+                }
             }
             else {
-                std::cout << "\nInvalid username or password.\n";
+                std::cout << "Invalid username or password.\n";
             }
         }
         else if (choice == 2) {
             std::string username, password;
-
             std::cout << "Choose username: ";
             std::getline(std::cin, username);
-
             std::cout << "Choose password: ";
             std::getline(std::cin, password);
 
             if (username.empty() || password.empty()) {
-                std::cout << "Username and password cannot be empty.\n";
+                std::cout << "Error: username/password cannot be empty.\n";
                 continue;
             }
 
             if (auth.signup(username, password)) {
-                std::cout << "Signup successful. You may now log in.\n";
+                std::cout << "Signup successful. You can now login.\n";
             }
             else {
-                std::cout << "That username is already taken.\n";
+                std::cout << "Username already exists or signup failed.\n";
             }
         }
         else if (choice == 3) {
             return 0;
         }
-        else {
-            std::cout << "Invalid option.\n";
-        }
     }
 
-    //
-    // ===== MAIN APPLICATION LOOP =====
-    //
+    // MAIN APP LOOP
     while (true) {
         std::cout << "\n===== MAIN MENU =====\n";
-        std::cout << "Logged in as: " << current->username << "\n";
+        std::cout << "User: " << current->username << "\n";
         std::cout << "1. Add Item\n";
         std::cout << "2. Review Due Items\n";
         std::cout << "3. List All Items\n";
         std::cout << "4. Save & Exit\n> ";
 
         int choice;
-        std::cin >> choice;
+        if (!(std::cin >> choice)) {
+            std::cin.clear();
+            std::string dummy;
+            std::getline(std::cin, dummy);
+            continue;
+        }
         std::cin.ignore();
 
         if (choice == 1) {
@@ -137,7 +132,7 @@ int main() {
             }
 
             items.emplace_back(title);
-            std::cout << "Added.\n";
+            std::cout << "Item added.\n";
         }
         else if (choice == 2) {
             auto due = scheduler.getDueItems(items);
@@ -148,15 +143,21 @@ int main() {
             }
 
             for (auto* item : due) {
-                std::cout << "\nReview: " << item->title << "\n";
-                std::cout << "Quality? (1=Again, 2=Hard, 3=Good, 4=Easy): ";
+                std::cout << "\nReviewing: " << item->title << "\n";
+                std::cout << "Quality (1=Again, 2=Hard, 3=Good, 4=Easy): ";
 
                 int q;
-                std::cin >> q;
+                if (!(std::cin >> q)) {
+                    std::cin.clear();
+                    std::string dummy;
+                    std::getline(std::cin, dummy);
+                    std::cout << "Invalid input.\n";
+                    continue;
+                }
                 std::cin.ignore();
 
                 if (q < 1 || q > 4) {
-                    std::cout << "Invalid response. Skipped.\n";
+                    std::cout << "Invalid response—skipping.\n";
                     continue;
                 }
 
@@ -168,12 +169,17 @@ int main() {
             listAllItems(items);
         }
         else if (choice == 4) {
-            std::string file = itemFileFor(current->username);
-
-            Storage::saveItems(items, file);   // save items
-            auth.save();                       // save users
-
-            std::cout << "All data saved. Goodbye!\n";
+            const auto& key = auth.getSessionKey();
+            if (!Storage::saveItems(items, itemFileFor(current->username), key)) {
+                std::cout << "Error: could not save encrypted data.\n";
+            }
+            else {
+                std::cout << "Items saved.\n";
+            }
+            // save users too (not strictly necessary unless signup happened)
+            auth.save();
+            auth.logout();
+            std::cout << "Goodbye!\n";
             break;
         }
         else {

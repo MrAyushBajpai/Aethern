@@ -36,6 +36,8 @@ add_library(storage
 )
 
 target_include_directories(storage PUBLIC src)
+target_link_libraries(storage PRIVATE unofficial-sodium::sodium)
+
 
 #
 # === CLI EXECUTABLE ===

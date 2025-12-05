@@ -1,10 +1,15 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.14)
 project(backend)
 
 set(CMAKE_CXX_STANDARD 17)
 
+if (MSVC)
+    add_compile_options(/utf-8 /D_UNICODE /DUNICODE)
+endif()
+
 # Find libsodium (vcpkg usually)
 find_package(unofficial-sodium CONFIG REQUIRED)
+find_package(spdlog REQUIRED)
 
 #
 # === CORE LIBRARY ===
@@ -26,7 +31,7 @@ add_library(auth
 
 target_include_directories(auth PUBLIC src)
 
-target_link_libraries(auth PRIVATE unofficial-sodium::sodium)
+target_link_libraries(auth PRIVATE unofficial-sodium::sodium spdlog::spdlog)
 
 #
 # === STORAGE LIBRARY ===
@@ -36,7 +41,7 @@ add_library(storage
 )
 
 target_include_directories(storage PUBLIC src)
-target_link_libraries(storage PRIVATE unofficial-sodium::sodium)
+target_link_libraries(storage PRIVATE unofficial-sodium::sodium spdlog::spdlog)
 
 
 #
@@ -53,4 +58,5 @@ target_link_libraries(cli
         auth
         storage
         unofficial-sodium::sodium
+        spdlog::spdlog
 )

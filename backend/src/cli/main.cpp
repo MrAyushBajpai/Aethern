@@ -3,6 +3,7 @@
 #include <string>
 #include <sodium.h>
 
+#include "../utils/logging.hpp"
 #include "../auth/AuthManager.hpp"
 #include "../storage/Storage.hpp"
 #include "../core/Scheduler.hpp"
@@ -35,6 +36,8 @@ int main() {
         std::cerr << "Failed to initialize libsodium\n";
         return 1;
     }
+
+    Log::init();
 
     AuthManager auth; // automatically loads users from users.txt
     Scheduler scheduler;

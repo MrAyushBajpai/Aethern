@@ -47,9 +47,24 @@ void listAllItems(const std::vector<Item>& items) {
         std::cout << "   Lapses: " << it.lapses << "\n";
         std::cout << "   Streak: " << it.streak << "\n";
         std::cout << "   Next review: " << it.next_review << " (UNIX)\n";
+
+        std::cout << "   Review History:\n";
+        if (it.history.empty()) {
+            std::cout << "      (no history)\n";
+        }
+        else {
+            for (const auto& r : it.history) {
+                std::cout << "      - " << r.timestamp
+                    << " | quality=" << r.quality
+                    << " | interval_after=" << r.interval_after
+                    << "\n";
+            }
+        }
+
         std::cout << "-----------------------------\n";
     }
 }
+
 
 int askQuality() {
     while (true) {

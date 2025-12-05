@@ -4,6 +4,12 @@
 #include <vector>
 #include <spdlog/spdlog.h>
 
+struct ReviewRecord {
+    std::time_t timestamp;
+    int quality;
+    int interval_after;
+};
+
 class Item {
 public:
     Item() = default;
@@ -24,6 +30,8 @@ public:
     int streak = 0;
 
     std::vector<std::string> tags;
+
+    std::vector<ReviewRecord> history;
 
     void scheduleNext(int days);
 

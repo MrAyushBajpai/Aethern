@@ -9,7 +9,6 @@ static const char MAGIC_HDR[] = "SRDATA1\n";
 
 bool Storage::saveUsers(const std::vector<User>& users, const std::string& filename) {
     spdlog::info("Saving {} users to '{}'", users.size(), filename);
-
     std::ofstream out(filename, std::ios::trunc);
     if (!out) {
         spdlog::error("Failed to open '{}' for writing user data", filename);
@@ -28,7 +27,6 @@ bool Storage::saveUsers(const std::vector<User>& users, const std::string& filen
 
 bool Storage::loadUsers(std::vector<User>& users, const std::string& filename) {
     spdlog::info("Loading users from '{}'", filename);
-
     std::ifstream in(filename);
     if (!in) {
         spdlog::warn("User file '{}' not found; treating as empty", filename);
@@ -47,7 +45,6 @@ bool Storage::loadUsers(std::vector<User>& users, const std::string& filename) {
         std::string sep;
         std::getline(in, sep);
         std::getline(in, sep);
-
         users.push_back(u);
     }
 
@@ -57,6 +54,7 @@ bool Storage::loadUsers(std::vector<User>& users, const std::string& filename) {
 
 static std::string serializeItemsPlain(const std::vector<Item>& items) {
     std::ostringstream oss;
+
     for (const auto& it : items) {
         oss << it.title << "\n"
             << it.content << "\n"
@@ -64,9 +62,18 @@ static std::string serializeItemsPlain(const std::vector<Item>& items) {
             << it.interval << "\n"
             << it.ease_factor << "\n"
             << it.last_review << "\n"
-            << it.next_review << "\n"
-            << "---\n";
+            << it.next_review << "\n";
+
+        oss << it.history.size() << "\n";
+        for (const auto& r : it.history) {
+            oss << r.timestamp << " "
+                << r.quality << " "
+                << r.interval_after << "\n";
+        }
+
+        oss << "---\n";
     }
+
     return oss.str();
 }
 
@@ -85,7 +92,6 @@ static bool parsePlainToItems(const std::string& plain, std::vector<Item>& items
         it.tags.clear();
         std::istringstream tss(tags_line);
         std::string tag;
-
         while (std::getline(tss, tag, ',')) {
             while (!tag.empty() && std::isspace((unsigned char)tag.front())) tag.erase(tag.begin());
             while (!tag.empty() && std::isspace((unsigned char)tag.back())) tag.pop_back();
@@ -97,18 +103,31 @@ static bool parsePlainToItems(const std::string& plain, std::vector<Item>& items
         if (!(iss >> it.last_review)) break;
         if (!(iss >> it.next_review)) break;
 
+        size_t hist_count = 0;
+        if (!(iss >> hist_count)) break;
+
         std::string sep;
+        std::getline(iss, sep);
+
+        it.history.clear();
+        for (size_t i = 0; i < hist_count; ++i) {
+            ReviewRecord r;
+            if (!(iss >> r.timestamp >> r.quality >> r.interval_after)) break;
+            std::getline(iss, sep);
+            it.history.push_back(r);
+        }
+
         std::getline(iss, sep);
         std::getline(iss, sep);
 
         items.push_back(it);
     }
+
     return true;
 }
 
 bool Storage::saveItems(const std::vector<Item>& items, const std::string& filename, const std::vector<unsigned char>& key) {
     spdlog::info("Saving {} encrypted items to '{}'", items.size(), filename);
-
     if (key.size() != crypto_secretbox_KEYBYTES) {
         spdlog::error("Invalid key size");
         return false;
@@ -169,8 +188,10 @@ bool Storage::loadItems(std::vector<Item>& items, const std::string& filename, c
         return false;
     }
 
-    std::vector<unsigned char> ciphertext((std::istreambuf_iterator<char>(in)),
+    std::vector<unsigned char> ciphertext(
+        (std::istreambuf_iterator<char>(in)),
         std::istreambuf_iterator<char>());
+
     if (ciphertext.size() < crypto_secretbox_MACBYTES) {
         spdlog::error("Ciphertext too short");
         return false;

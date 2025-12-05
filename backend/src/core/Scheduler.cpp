@@ -59,6 +59,12 @@ void Scheduler::review(Item& item, ReviewQuality q) {
     }
     item.ease_factor = std::clamp(newEF, ease_min, ease_max);
 
+    item.history.push_back({
+    std::time(nullptr),
+    static_cast<int>(q),
+    adjusted
+        });
+
     item.scheduleNext(adjusted);
 }
 

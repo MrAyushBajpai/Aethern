@@ -2,36 +2,29 @@
 #include <ctime>
 #include <algorithm>
 
-Scheduler::Scheduler()
-    : ease_min(1.3),
+Scheduler::Scheduler(TagManager* tagMgr)
+    : tagManager(tagMgr),
+    ease_min(1.3),
     ease_max(2.8),
     lapse_reset_interval(1),
     leech_threshold(8)
 {
-    spdlog::info("Scheduler initialized with ease_min={}, ease_max={}, lapse_reset_interval={}, leech_threshold={}",
-        ease_min, ease_max, lapse_reset_interval, leech_threshold);
+    spdlog::info("Scheduler initialized with tag priority support.");
 }
 
 void Scheduler::review(Item& item, ReviewQuality q) {
-    spdlog::info("Reviewing Item ID={} | Quality={}", item.id, static_cast<int>(q));
+    spdlog::info("Review Item {} | q={}", item.title, (int)q);
 
-    // AGAIN: a lapse occurred
     if (q == ReviewQuality::AGAIN) {
         handleLapse(item);
         return;
     }
 
-    // For successful reviews: modify ease factor
     double newEF = computeEaseFactor(item.ease_factor, q);
-
-    spdlog::debug("Old EF={} -> New EF={}", item.ease_factor, newEF);
-
     item.ease_factor = std::clamp(newEF, ease_min, ease_max);
 
-    // Compute new interval
     int newInterval = computeNewInterval(item, q);
-
-    spdlog::debug("Old Interval={} | New Interval={}", item.interval, newInterval);
+    newInterval = applyTagPriority(item, newInterval);
 
     item.scheduleNext(newInterval);
 }
@@ -41,14 +34,10 @@ std::vector<Item*> Scheduler::getDueItems(std::vector<Item>& items) const {
     std::time_t now = std::time(nullptr);
 
     for (auto& item : items) {
-        if (item.next_review <= now) {
+        if (item.next_review <= now)
             due.push_back(&item);
-            spdlog::debug("Item ID={} is due (next_review={}, now={})",
-                item.id, item.next_review, now);
-        }
     }
 
-    spdlog::info("getDueItems: {} items due.", due.size());
     return due;
 }
 
@@ -62,44 +51,38 @@ double Scheduler::computeEaseFactor(double EF, ReviewQuality q) const {
 }
 
 int Scheduler::computeNewInterval(const Item& item, ReviewQuality q) const {
+    double ef = item.ease_factor;
     int interval = item.interval;
 
-    if (interval <= 0) return 1;
-
-    double ef = item.ease_factor;
-
     switch (q) {
-    case ReviewQuality::HARD:
-        interval = std::max(1, (int)(interval * (ef * 0.9)));
-        break;
-    case ReviewQuality::GOOD:
-        interval = std::max(1, (int)(interval * ef));
-        break;
-    case ReviewQuality::EASY:
-        interval = std::max(1, (int)(interval * ef * 1.3));
-        break;
-    default:
-        break;
+    case ReviewQuality::HARD: interval *= (ef * 0.9); break;
+    case ReviewQuality::GOOD: interval *= ef; break;
+    case ReviewQuality::EASY: interval *= ef * 1.3; break;
+    default: break;
     }
+
+    return std::max(1, interval);
+}
+
+int Scheduler::applyTagPriority(const Item& item, int interval) const {
+    int highest = 1;
+
+    for (auto& tag : item.tags) {
+        int w = tagManager->getWeight(tag);
+        if (w > highest) highest = w;
+    }
+
+    if (highest > 1)
+        interval = std::max(1, interval / highest);
 
     return interval;
 }
 
 void Scheduler::handleLapse(Item& item) {
     item.lapses++;
-    spdlog::warn("Item ID={} Lapsed! Total lapses={}", item.id, item.lapses);
-
-    // Leech detection
-    if (item.lapses >= leech_threshold) {
+    if (item.lapses >= leech_threshold)
         item.is_leech = true;
-        spdlog::error("Item ID={} marked as LEECH ({} lapses)", item.id, item.lapses);
-    }
 
-    // Reset EF slightly
     item.ease_factor = std::max(ease_min, item.ease_factor - 0.2);
-    spdlog::debug("Ease factor decreased due to lapse. Now EF={}", item.ease_factor);
-
-    // Reset interval
     item.scheduleNext(lapse_reset_interval);
-    spdlog::info("Lapse reset interval applied: next interval={}", lapse_reset_interval);
 }

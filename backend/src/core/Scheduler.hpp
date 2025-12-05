@@ -1,7 +1,8 @@
 #pragma once
 #include <vector>
-#include "Item.hpp"
 #include <spdlog/spdlog.h>
+#include "Item.hpp"
+#include "TagManager.hpp"
 
 enum class ReviewQuality {
     AGAIN = 1,
@@ -12,22 +13,21 @@ enum class ReviewQuality {
 
 class Scheduler {
 public:
-    Scheduler();
+    Scheduler(TagManager* tagMgr);
 
     void review(Item& item, ReviewQuality quality);
-
-    // Return items whose next_review timestamp is <= now
     std::vector<Item*> getDueItems(std::vector<Item>& items) const;
 
 private:
-    // Internal helpers
+    TagManager* tagManager;
+
     int computeNewInterval(const Item& item, ReviewQuality q) const;
     double computeEaseFactor(double EF, ReviewQuality q) const;
+    int applyTagPriority(const Item& item, int interval) const;
     void handleLapse(Item& item);
 
-    // Configurable parameters
     double ease_min;
     double ease_max;
-    int lapse_reset_interval;     // Reset interval when the user fails
-    int leech_threshold;          // How many lapses before flagging as leech
+    int lapse_reset_interval;
+    int leech_threshold;
 };

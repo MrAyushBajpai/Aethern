@@ -3,6 +3,7 @@
 #include <string>
 #include "../core/Item.hpp"
 #include "../auth/User.hpp"
+#include "../core/TagManager.hpp"
 
 // Storage handles user file IO and per-user encrypted item files.
 //
@@ -23,4 +24,8 @@ public:
     // ITEMS (encrypted)
     static bool saveItems(const std::vector<Item>& items, const std::string& filename, const std::vector<unsigned char>& key);
     static bool loadItems(std::vector<Item>& items, const std::string& filename, const std::vector<unsigned char>& key);
+    
+    static bool saveTagWeights(const TagManager& mgr, const std::string& filename, const std::vector<unsigned char>& key);
+    static bool loadTagWeights(TagManager& mgr, const std::string& filename, const std::vector<unsigned char>& key);
+
 };

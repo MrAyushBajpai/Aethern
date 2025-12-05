@@ -17,7 +17,7 @@ find_package(spdlog REQUIRED)
 add_library(core
     src/core/Item.cpp
     src/core/Scheduler.cpp
-)
+ "src/core/TagManager.cpp")
 
 target_include_directories(core PUBLIC src)
 target_link_libraries(core PRIVATE spdlog::spdlog)
@@ -28,7 +28,7 @@ target_link_libraries(core PRIVATE spdlog::spdlog)
 add_library(auth
     src/auth/User.cpp
     src/auth/AuthManager.cpp
-)
+ "src/core/TagManager.cpp")
 
 target_include_directories(auth PUBLIC src)
 
@@ -39,7 +39,7 @@ target_link_libraries(auth PRIVATE unofficial-sodium::sodium spdlog::spdlog)
 #
 add_library(storage
     src/storage/Storage.cpp
-)
+ "src/core/TagManager.cpp")
 
 target_include_directories(storage PUBLIC src)
 target_link_libraries(storage PRIVATE unofficial-sodium::sodium spdlog::spdlog)
@@ -50,7 +50,7 @@ target_link_libraries(storage PRIVATE unofficial-sodium::sodium spdlog::spdlog)
 #
 add_executable(cli
     src/cli/main.cpp
-)
+ "src/core/TagManager.cpp")
 
 # Link everything needed
 target_link_libraries(cli

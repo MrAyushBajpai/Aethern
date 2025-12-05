@@ -4,8 +4,11 @@
 #include <sstream>
 #include <vector>
 #include <cstring>
+#include <vector>
 #include <sodium.h>
 #include <spdlog/spdlog.h>
+#include "../core/TagManager.hpp"
+
 
 static const char MAGIC_HDR[] = "SRDATA1\n"; // 8 bytes
 
@@ -62,6 +65,15 @@ bool Storage::loadUsers(std::vector<User>& users, const std::string& filename) {
 }
 
 // -------------------- ITEMS (encrypted) --------------------
+// Format per item (plaintext, repeated):
+// title\n
+// content\n
+// tags_line (comma separated)\n
+// interval\n
+// ease_factor\n
+// last_review\n
+// next_review\n
+// ---\n
 
 static std::string serializeItemsPlain(const std::vector<Item>& items) {
     std::ostringstream oss;
@@ -70,6 +82,7 @@ static std::string serializeItemsPlain(const std::vector<Item>& items) {
     for (const auto& it : items) {
         oss << it.title << "\n";
         oss << it.content << "\n";
+        oss << it.tagsAsLine() << "\n";
         oss << it.interval << "\n";
         oss << it.ease_factor << "\n";
         oss << it.last_review << "\n";
@@ -89,6 +102,20 @@ static bool parsePlainToItems(const std::string& plain, std::vector<Item>& items
         Item it;
         if (!std::getline(iss, it.title)) break;
         std::getline(iss, it.content);
+        std::string tags_line;
+        if (!std::getline(iss, tags_line)) break;
+
+        // parse tags_line -> vector<string>
+        it.tags.clear();
+        std::istringstream tss(tags_line);
+        std::string tag;
+        while (std::getline(tss, tag, ',')) {
+            // trim
+            while (!tag.empty() && std::isspace((unsigned char)tag.front())) tag.erase(tag.begin());
+            while (!tag.empty() && std::isspace((unsigned char)tag.back())) tag.pop_back();
+            if (!tag.empty()) it.tags.push_back(tag);
+        }
+
         if (!(iss >> it.interval)) break;
         if (!(iss >> it.ease_factor)) break;
         if (!(iss >> it.last_review)) break;
@@ -194,5 +221,115 @@ bool Storage::loadItems(std::vector<Item>& items, const std::string& filename, c
     parsePlainToItems(plain_str, items);
 
     spdlog::info("Successfully loaded {} decrypted items from '{}'", items.size(), filename);
+    return true;
+}
+
+// Save tag weights (encrypted)
+bool Storage::saveTagWeights(const TagManager& mgr, const std::string& filename, const std::vector<unsigned char>& key) {
+    spdlog::info("Saving tag weights to '{}'", filename);
+
+    if (key.size() != crypto_secretbox_KEYBYTES) {
+        spdlog::error("Invalid encryption key size for saveTagWeights()");
+        return false;
+    }
+
+    std::string plain = mgr.serialize();
+    const unsigned char* plain_buf = reinterpret_cast<const unsigned char*>(plain.data());
+    unsigned long long plain_len = static_cast<unsigned long long>(plain.size());
+
+    // allocate ciphertext buffer: plaintext + MAC
+    std::vector<unsigned char> ciphertext(plain_len + crypto_secretbox_MACBYTES);
+
+    unsigned char nonce[crypto_secretbox_NONCEBYTES];
+    randombytes_buf(nonce, sizeof(nonce));
+
+    if (crypto_secretbox_easy(ciphertext.data(), plain_buf, plain_len, nonce, key.data()) != 0) {
+        spdlog::error("crypto_secretbox_easy failed in saveTagWeights()");
+        return false;
+    }
+
+    std::ofstream out(filename, std::ios::binary | std::ios::trunc);
+    if (!out) {
+        spdlog::error("Failed to open '{}' for writing tag weights", filename);
+        return false;
+    }
+
+    out.write(MAGIC_HDR, sizeof(MAGIC_HDR) - 1);
+    out.write(reinterpret_cast<const char*>(nonce), sizeof(nonce));
+    out.write(reinterpret_cast<const char*>(ciphertext.data()), static_cast<std::streamsize>(ciphertext.size()));
+    out.close();
+
+    spdlog::info("Tag weights saved to '{}'", filename);
+    return true;
+}
+
+// Load tag weights (encrypted)
+bool Storage::loadTagWeights(TagManager& mgr, const std::string& filename, const std::vector<unsigned char>& key) {
+    spdlog::info("Loading tag weights from '{}'", filename);
+    mgr.weights.clear();
+
+    if (key.size() != crypto_secretbox_KEYBYTES) {
+        spdlog::error("Invalid encryption key size for loadTagWeights()");
+        return false;
+    }
+
+    std::ifstream in(filename, std::ios::binary);
+    if (!in) {
+        spdlog::warn("Tag weight file '{}' not found; using defaults.", filename);
+        return true; // Not an error; no tag file yet
+    }
+
+    // Read and validate header
+    char hdr[sizeof(MAGIC_HDR) - 1];
+    in.read(hdr, sizeof(hdr));
+    if (in.gcount() != static_cast<std::streamsize>(sizeof(hdr))) {
+        spdlog::error("Failed to read header from '{}'", filename);
+        return false;
+    }
+    if (std::strncmp(hdr, MAGIC_HDR, sizeof(hdr)) != 0) {
+        spdlog::error("Invalid tag weight file header for '{}'", filename);
+        return false;
+    }
+
+    // Read nonce
+    unsigned char nonce[crypto_secretbox_NONCEBYTES];
+    in.read(reinterpret_cast<char*>(nonce), sizeof(nonce));
+    if (in.gcount() != static_cast<std::streamsize>(sizeof(nonce))) {
+        spdlog::error("Failed to read nonce from '{}'", filename);
+        return false;
+    }
+
+    // Read remaining ciphertext bytes
+    std::vector<unsigned char> ciphertext((std::istreambuf_iterator<char>(in)),
+        std::istreambuf_iterator<char>());
+
+    if (ciphertext.size() < crypto_secretbox_MACBYTES) {
+        spdlog::error("Ciphertext too short in '{}'", filename);
+        return false;
+    }
+
+    // Prepare plaintext buffer (ciphertext length - MAC)
+    unsigned long long cipher_len = static_cast<unsigned long long>(ciphertext.size());
+    unsigned long long plain_len = cipher_len - static_cast<unsigned long long>(crypto_secretbox_MACBYTES);
+    std::vector<unsigned char> plain(plain_len);
+
+    // Decrypt: note order of parameters: m, c, clen, n, k
+    if (crypto_secretbox_open_easy(plain.data(), ciphertext.data(), cipher_len, nonce, key.data()) != 0) {
+        spdlog::error("Decryption failed for '{}': wrong key or tampered data", filename);
+        return false;
+    }
+
+    // Build string from plain vector safely
+    std::string plain_str;
+    if (plain_len > 0) {
+        plain_str.assign(reinterpret_cast<const char*>(plain.data()), static_cast<size_t>(plain_len));
+    }
+    else {
+        plain_str.clear();
+    }
+
+    // Deserialize into TagManager
+    mgr.deserialize(plain_str);
+    spdlog::info("Loaded {} tag weights from '{}'", mgr.weights.size(), filename);
     return true;
 }

@@ -2,6 +2,7 @@
 #include <string>
 #include <ctime>
 #include <chrono>
+#include <vector>
 #include <spdlog/spdlog.h>
 
 class Item {
@@ -26,8 +27,18 @@ public:
     int review_count = 0;         // Total successful reviews
     int streak = 0;               // Consecutive successful reviews
 
+    // Tags
+    std::vector<std::string> tags;
+
     // Scheduling function (days into future)
     void scheduleNext(int days);
+
+    // Tag helpers
+    void addTag(const std::string& tag);
+    bool removeTag(const std::string& tag); // returns true if removed
+    bool hasTag(const std::string& tag) const;
+    void setTags(const std::vector<std::string>& newTags);
+    std::string tagsAsLine() const; // CSV single line for storage
 
     // Utility
     static std::string generateID();
